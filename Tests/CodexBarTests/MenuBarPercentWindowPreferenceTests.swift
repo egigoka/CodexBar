@@ -112,6 +112,19 @@ struct MenuBarPercentWindowPreferenceTests {
     }
 
     @Test
+    func `monthly preference round-trips through the tertiary lane`() {
+        let original = MenuBarLayout(lines: [[.icon, .percent(window: .automatic)]])
+
+        let monthly = MenuBarPercentWindowPreference.monthly.applied(to: original)
+
+        #expect(monthly == MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]]))
+        #expect(MenuBarPercentWindowPreference.current(in: monthly) == .monthly)
+        #expect(MenuBarPercentWindowPreference.hasPercentToken(in: monthly))
+        #expect(MenuBarPercentWindowPreference.available(for: .opencodego).contains(.monthly))
+        #expect(MenuBarPercentWindowPreference.monthly.label(for: .opencodego) == L("Monthly"))
+    }
+
+    @Test
     func `picker stays hidden unless the global style is icon and percent`() {
         let layout = MenuBarLayout(lines: [[.icon, .percent(window: .automatic)]])
         let options = MenuBarPercentWindowPreference.allCases
