@@ -708,7 +708,13 @@ enum MenuBarLayoutUserDefaultsKey {
     static let conditionals = "menuBarLayoutConditionals"
     static let conditionalsReleased = "menuBarLayoutConditionalsV2"
     static let conditionalsCurrent = "menuBarLayoutConditionalsV3"
-    static let projectionVersion = "menuBarLayoutProjectionVersion"
+    static let projectionVersionLayout = "menuBarLayoutProjectionVersionLayout"
+    static let projectionVersionOverrides = "menuBarLayoutProjectionVersionOverrides"
+    static let projectionVersionLibrary = "menuBarLayoutProjectionVersionLibrary"
+    /// Superseded single stamp, briefly shipped: repair stamps each triple separately because
+    /// loaders run in layout, overrides, library order, and the first loader must not disarm
+    /// repair for the later triples. Stamp helpers delete this key when they stamp.
+    static let projectionVersionLegacy = "menuBarLayoutProjectionVersion"
 }
 
 enum MenuBarLayoutPreset: String, CaseIterable, Identifiable, Sendable {
@@ -871,21 +877,25 @@ extension MenuBarLayout {
 }
 
 enum MenuBarLayoutPersistence {
-    /// Bump when releasedCompatible()/legacyCompatible() mappings change. Loaders trust V3 and
-    /// reproject the older keys when the stored stamp is older: the agreement gate cannot tell an
-    /// older-release edit apart from a projection that changed between versions, so without this a
-    /// mapping change strands layouts whose older keys predate it. Old releases never write the
-    /// stamp, so a genuine downgrade edit after the stamp is set still wins the gate.
+    /// Bump when releasedCompatible()/legacyCompatible() mappings change. Each key triple
+    /// carries its own stamp: loaders run in layout, overrides, library order, and a single
+    /// shared stamp would let the first loader disarm repair for the triples that load later.
+    /// Loaders trust V3 and reproject the older keys when their triple's stamp is older: the
+    /// agreement gate cannot tell an older-release edit apart from a projection that changed
+    /// between versions, so without this a mapping change strands layouts whose older keys
+    /// predate it. Old releases never write the stamp, so a genuine downgrade edit after the
+    /// stamp is set still wins the gate.
     /// One-time cost: a downgrade edit made before the stamp existed is treated as stale and
     /// repaired from V3 on first launch.
     static let projectionVersion = 1
 
-    static func storedProjectionVersion(in userDefaults: UserDefaults) -> Int {
-        userDefaults.integer(forKey: MenuBarLayoutUserDefaultsKey.projectionVersion)
+    static func storedProjectionVersion(forKey key: String, in userDefaults: UserDefaults) -> Int {
+        userDefaults.integer(forKey: key)
     }
 
-    static func stampProjectionVersion(in userDefaults: UserDefaults) {
-        userDefaults.set(Self.projectionVersion, forKey: MenuBarLayoutUserDefaultsKey.projectionVersion)
+    static func stampProjectionVersion(forKey key: String, in userDefaults: UserDefaults) {
+        userDefaults.set(Self.projectionVersion, forKey: key)
+        userDefaults.removeObject(forKey: MenuBarLayoutUserDefaultsKey.projectionVersionLegacy)
     }
 
     /// Reconcile V2 against its V1 projection first, then V3 against that result. This detects edits
@@ -991,20 +1001,25 @@ enum MenuBarLayoutPersistence {
         into userDefaults: UserDefaults)
         -> MenuBarLayout?
     {
-        if let current, Self.storedProjectionVersion(in: userDefaults) < Self.projectionVersion,
-           let blobs = try? Self.encoded(current)
+        if let current,
+            Self.storedProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionLayout, in: userDefaults)
+                < Self.projectionVersion,
+            let blobs = try? Self.encoded(current)
         {
             Self.storeLayout(blobs, into: userDefaults)
-            Self.stampProjectionVersion(in: userDefaults)
+            Self.stampProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionLayout, in: userDefaults)
             return current
         }
         let preferred = self.preferredLayout(current: current, released: released, legacy: legacy)
         if let preferred,
-           current == nil || released == nil || legacy == nil,
-           let blobs = try? self.encoded(preferred)
+            current == nil || released == nil || legacy == nil,
+            let blobs = try? self.encoded(preferred)
         {
             Self.storeLayout(blobs, into: userDefaults)
-            Self.stampProjectionVersion(in: userDefaults)
+            Self.stampProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionLayout, in: userDefaults)
         }
         return preferred
     }
@@ -1025,21 +1040,27 @@ enum MenuBarLayoutPersistence {
         into userDefaults: UserDefaults)
         -> [String: MenuBarLayout]
     {
-        if let current, Self.storedProjectionVersion(in: userDefaults) < Self.projectionVersion {
+        if let current,
+            Self.storedProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionOverrides, in: userDefaults)
+                < Self.projectionVersion
+        {
             let repaired = Self.repairOverrides(current: current, released: released, legacy: legacy)
             if let blobs = try? Self.encodedOverrides(repaired) {
                 Self.storeOverrides(blobs, into: userDefaults)
             }
-            Self.stampProjectionVersion(in: userDefaults)
+            Self.stampProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionOverrides, in: userDefaults)
             return repaired
         }
         let preferred = self.preferredOverrides(current: current, released: released, legacy: legacy)
         if current != nil || released != nil || legacy != nil,
-           current == nil || released == nil || legacy == nil,
-           let blobs = try? self.encodedOverrides(preferred)
+            current == nil || released == nil || legacy == nil,
+            let blobs = try? self.encodedOverrides(preferred)
         {
             Self.storeOverrides(blobs, into: userDefaults)
-            Self.stampProjectionVersion(in: userDefaults)
+            Self.stampProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionOverrides, in: userDefaults)
         }
         return preferred
     }
@@ -1142,21 +1163,27 @@ enum MenuBarLayoutPersistence {
         into userDefaults: UserDefaults)
         -> [MenuBarLayoutConditional]?
     {
-        if let current, Self.storedProjectionVersion(in: userDefaults) < Self.projectionVersion {
+        if let current,
+            Self.storedProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionLibrary, in: userDefaults)
+                < Self.projectionVersion
+        {
             let repaired = Self.repairLibrary(current: current, released: released, legacy: legacy)
             if let blobs = try? Self.encodedLibrary(repaired) {
                 Self.storeLibrary(blobs, into: userDefaults)
             }
-            Self.stampProjectionVersion(in: userDefaults)
+            Self.stampProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionLibrary, in: userDefaults)
             return repaired
         }
         let preferred = self.preferredLibrary(current: current, released: released, legacy: legacy)
         if let preferred,
-           current == nil || released == nil || legacy == nil,
-           let blobs = try? self.encodedLibrary(preferred)
+            current == nil || released == nil || legacy == nil,
+            let blobs = try? self.encodedLibrary(preferred)
         {
             Self.storeLibrary(blobs, into: userDefaults)
-            Self.stampProjectionVersion(in: userDefaults)
+            Self.stampProjectionVersion(
+                forKey: MenuBarLayoutUserDefaultsKey.projectionVersionLibrary, in: userDefaults)
         }
         return preferred
     }
