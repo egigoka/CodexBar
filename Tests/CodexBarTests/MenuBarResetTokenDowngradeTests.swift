@@ -113,6 +113,92 @@ struct MenuBarResetTokenDowngradeTests {
     }
 
     @Test
+    func `prestamp lanePace triple repairs to V3 and reprojects older keys`() throws {
+        let monthly = MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary), .lanePace(lane: .tertiary)]])
+        let defaults = InMemoryUserDefaults()
+        // The user's stranded state: V2/V1 written before releasedCompatible mapped lanePace
+        // instead of filtering it, so the agreement gate falls back to V2 forever.
+        try defaults.set(JSONEncoder().encode(["opencodego": monthly]), forKey: MenuBarLayoutUserDefaultsKey.overridesCurrent)
+        try defaults.set(
+            JSONEncoder().encode(["opencodego": MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]])]),
+            forKey: "menuBarLayoutOverridesV2")
+        try defaults.set(
+            JSONEncoder().encode(["opencodego": MenuBarLayout(lines: [[.icon, .percent(window: .automatic)]])]),
+            forKey: "menuBarLayoutOverrides")
+        #expect(defaults.integer(forKey: MenuBarLayoutUserDefaultsKey.projectionVersion) == 0)
+
+        let loaded = self.reload(defaults)
+        #expect(loaded.overrides["opencodego"] == monthly)
+        let released: [String: MenuBarLayout]? = self.decode(defaults.data(forKey: "menuBarLayoutOverridesV2"))
+        #expect(released == ["opencodego": monthly.releasedCompatible()])
+        #expect(released?["opencodego"]?.lines.joined().contains(.pace(window: .automatic)) == true)
+        let legacy: [String: MenuBarLayout]? = self.decode(defaults.data(forKey: "menuBarLayoutOverrides"))
+        #expect(legacy == released?.mapValues { $0.legacyCompatible(for: UsageProvider(rawValue: "opencodego")) })
+        #expect(defaults.integer(forKey: MenuBarLayoutUserDefaultsKey.projectionVersion) == MenuBarLayoutPersistence.projectionVersion)
+    }
+
+    @Test
+    func `prestamp repair keeps older-only provider keys`() throws {
+        let codex = MenuBarLayout(lines: [[.icon]])
+        let claudeV2 = MenuBarLayout(lines: [[.providerName]])
+        let defaults = InMemoryUserDefaults()
+        try defaults.set(JSONEncoder().encode(["codex": codex]), forKey: MenuBarLayoutUserDefaultsKey.overridesCurrent)
+        try defaults.set(
+            JSONEncoder().encode(["codex": codex.releasedCompatible(), "claude": claudeV2]),
+            forKey: "menuBarLayoutOverridesV2")
+        try defaults.set(
+            JSONEncoder().encode([
+                "codex": codex.releasedCompatible().legacyCompatible(for: .codex),
+                "claude": claudeV2.legacyCompatible(for: .claude),
+            ]),
+            forKey: "menuBarLayoutOverrides")
+
+        let loaded = self.reload(defaults)
+        #expect(loaded.overrides["codex"] == codex)
+        #expect(loaded.overrides["claude"] == claudeV2)
+    }
+
+    @Test
+    func `prestamp global layout repairs to V3`() throws {
+        let monthly = MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary), .lanePace(lane: .tertiary)]])
+        let defaults = InMemoryUserDefaults()
+        try defaults.set(JSONEncoder().encode(monthly), forKey: MenuBarLayoutUserDefaultsKey.layoutCurrent)
+        try defaults.set(
+            JSONEncoder().encode(MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]])),
+            forKey: "menuBarLayoutV2")
+        try defaults.set(
+            JSONEncoder().encode(MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]])),
+            forKey: "menuBarLayout")
+
+        let loaded = self.reload(defaults)
+        #expect(loaded.layout == monthly)
+        let released: MenuBarLayout? = self.decode(defaults.data(forKey: "menuBarLayoutV2"))
+        #expect(released == monthly.releasedCompatible())
+        #expect(defaults.integer(forKey: MenuBarLayoutUserDefaultsKey.projectionVersion) == MenuBarLayoutPersistence.projectionVersion)
+    }
+
+    @Test
+    func `stamped triple still honors a downgrade edit`() throws {
+        let monthly = MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary), .lanePace(lane: .tertiary)]])
+        let defaults = InMemoryUserDefaults()
+        try defaults.set(JSONEncoder().encode(["opencodego": monthly]), forKey: MenuBarLayoutUserDefaultsKey.overridesCurrent)
+        let blobs = try MenuBarLayoutPersistence.encodedOverrides(["opencodego": monthly])
+        try defaults.set(blobs.released, forKey: "menuBarLayoutOverridesV2")
+        try defaults.set(blobs.legacy, forKey: "menuBarLayoutOverrides")
+        MenuBarLayoutPersistence.stampProjectionVersion(in: defaults)
+        // An old release edits V2/V1 only and never touches the stamp.
+        try defaults.set(
+            JSONEncoder().encode(["opencodego": MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]])]),
+            forKey: "menuBarLayoutOverridesV2")
+        try defaults.set(
+            JSONEncoder().encode(["opencodego": MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]])]),
+            forKey: "menuBarLayoutOverrides")
+
+        let loaded = self.reload(defaults)
+        #expect(loaded.overrides["opencodego"] == MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]]))
+    }
+
+    @Test
     func `fresh defaults do not materialize saved layouts or an empty conditional library`() {
         let defaults = InMemoryUserDefaults()
         let loaded = self.reload(defaults)
@@ -195,6 +281,7 @@ struct MenuBarResetTokenDowngradeTests {
         ] {
             defaults.set(value, forKey: key)
         }
+        MenuBarLayoutPersistence.stampProjectionVersion(in: defaults)
     }
 
     private func reload(_ defaults: UserDefaults) -> ReleasedResetV2.State {

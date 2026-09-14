@@ -531,6 +531,7 @@ extension SettingsStore {
         self.userDefaults.set(blobs.current, forKey: MenuBarLayoutUserDefaultsKey.layoutCurrent)
         self.userDefaults.set(blobs.released, forKey: MenuBarLayoutUserDefaultsKey.layoutReleased)
         self.userDefaults.set(blobs.legacy, forKey: MenuBarLayoutUserDefaultsKey.layout)
+        MenuBarLayoutPersistence.stampProjectionVersion(in: self.userDefaults)
     }
 
     private func persistMenuBarLayoutConditionals() {
@@ -540,6 +541,7 @@ extension SettingsStore {
         self.userDefaults.set(blobs.current, forKey: MenuBarLayoutUserDefaultsKey.conditionalsCurrent)
         self.userDefaults.set(blobs.released, forKey: MenuBarLayoutUserDefaultsKey.conditionalsReleased)
         self.userDefaults.set(blobs.legacy, forKey: MenuBarLayoutUserDefaultsKey.conditionals)
+        MenuBarLayoutPersistence.stampProjectionVersion(in: self.userDefaults)
     }
 
     private func persistMenuBarLayoutOverrides() {
@@ -548,6 +550,7 @@ extension SettingsStore {
         self.userDefaults.set(blobs.current, forKey: MenuBarLayoutUserDefaultsKey.overridesCurrent)
         self.userDefaults.set(blobs.released, forKey: MenuBarLayoutUserDefaultsKey.overridesReleased)
         self.userDefaults.set(blobs.legacy, forKey: MenuBarLayoutUserDefaultsKey.overrides)
+        MenuBarLayoutPersistence.stampProjectionVersion(in: self.userDefaults)
     }
 
     var copilotIconSecondaryWindowIDRaw: String {
