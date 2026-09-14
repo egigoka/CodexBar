@@ -114,8 +114,10 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
         settings.setMenuBarLayout(preference.applied(to: layout), for: provider)
     }
 
-    /// The preference a layout expresses, or nil when its percent tokens mix windows — a
-    /// combination only the layout editor can describe, which the picker must not silently flatten.
+    /// The preference a layout expresses, or nil when its picker-class percent tokens mix windows —
+    /// a combination only the layout editor can describe, which the picker must not silently flatten.
+    /// Independent primary/secondary lane tokens are ignored: they stay under the layout editor's
+    /// control and must not drag the picker to Custom.
     static func current(in layout: MenuBarLayout) -> Self? {
         var sawMonthly = false
         var windows: [PercentWindow] = []
@@ -126,8 +128,6 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
             case let .lanePercent(lane):
                 if lane == .tertiary {
                     sawMonthly = true
-                } else {
-                    return nil
                 }
             default:
                 continue
@@ -154,13 +154,16 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
         }
     }
 
-    /// Layout with every percent and pace token pointed at this preference's window; all other tokens,
-    /// including line breaks and separators, are left exactly as the user arranged them. Monthly
-    /// rewrites percent tokens to the tertiary lane token the renderer reads for that window, and
-    /// any other choice rewrites those lane tokens back — otherwise a Monthly layout would have
-    /// no percent token left to rewrite and the picker could never leave Monthly.
+    /// Layout with this preference's window pointed at the new choice, preserving independent
+    /// custom tokens. Percent tokens always follow (the picker's documented contract, including the
+    /// flattening of mixed percent windows); pace and lane tokens only follow when they match the
+    /// previous selection, so an independently chosen Weekly pace or Monthly percent survives a
+    /// picker change. Monthly rewrites percent tokens to the tertiary lane token the renderer reads
+    /// for that window, and leaving Monthly rewrites those lane tokens back — otherwise a Monthly
+    /// layout would have no percent token left to rewrite and the picker could never leave Monthly.
     func applied(to layout: MenuBarLayout) -> MenuBarLayout {
-        MenuBarLayout(lines: layout.lines.map { line in
+        let previous = Self.current(in: layout)
+        return MenuBarLayout(lines: layout.lines.map { line in
             line.map { token in
                 switch token {
                 case .percent:
@@ -168,14 +171,19 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
                         return .lanePercent(lane: .tertiary)
                     }
                     return .percent(window: self.percentWindow)
-                case .pace:
+                case let .pace(window):
                     if self == .monthly {
+                        guard previous == nil || window == previous?.percentWindow else { return token }
                         return .lanePace(lane: .tertiary)
                     }
+                    guard let previous, previous != .monthly else { return token }
+                    guard window == previous.percentWindow else { return token }
                     return .pace(window: self.percentWindow)
                 case let .lanePercent(lane) where lane == .tertiary && self != .monthly:
+                    guard previous == .monthly else { return token }
                     return .percent(window: self.percentWindow)
                 case let .lanePace(lane) where lane == .tertiary && self != .monthly:
+                    guard previous == .monthly else { return token }
                     return .pace(window: self.percentWindow)
                 default:
                     return token

@@ -333,7 +333,13 @@ struct MenuBarLayoutEditor: View {
 
     private var providerLaneTokens: [MenuBarLayoutToken] {
         MenuBarLayoutLane.available(for: self.persistenceProvider, snapshot: self.persistenceSnapshot)
-            .flatMap { [.lanePercent(lane: $0), .lanePace(lane: $0)] }
+            // Only the tertiary lane pace resolves in the renderer; primary/secondary lane pace
+            // would render as unavailable next to the working Session/Weekly pace tokens.
+            .flatMap { lane in
+                lane == .tertiary
+                    ? [.lanePercent(lane: lane), .lanePace(lane: lane)]
+                    : [.lanePercent(lane: lane)]
+            }
     }
 
     var body: some View {

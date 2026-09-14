@@ -664,8 +664,15 @@ struct MenuBarLayout: Codable, Hashable, Sendable {
     }
 
     /// Preserve all v0.56.8 tokens, dropping only the reset selections that release cannot decode.
+    /// `lanePace` maps onto its ordinary pace before that filtering so the released (V2) and legacy
+    /// (V1) projections agree: both carry the mapped pace, so a reload keeps the V3 layout instead
+    /// of mistaking the disagreement for an older-release edit.
     func releasedCompatible() -> MenuBarLayout {
-        let projected = self.lines.map { $0.filter(\.hasReleasedRepresentation) }
+        let projected = self.lines.map { line in
+            line
+                .map { $0.hasReleasedRepresentation ? $0 : $0.legacyCompatible() }
+                .filter(\.hasReleasedRepresentation)
+        }
         let compacted = projected.enumerated().filter { index, line in
             !line.isEmpty || self.lines[index].isEmpty
         }.map(\.element)

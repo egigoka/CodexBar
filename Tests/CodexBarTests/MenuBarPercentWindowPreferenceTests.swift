@@ -37,9 +37,11 @@ struct MenuBarPercentWindowPreferenceTests {
         settings.setMenuBarLayout(other, for: .claude)
 
         MenuBarPercentWindowPreference.persist(.weekly, appliedTo: layout, for: .codex, settings: settings)
+        // Mixed layout: semantic percents unify on Weekly, but the independently chosen Monthly
+        // lane survives the picker change.
         let expected = MenuBarLayout(lines: [[
             .icon, .percent(window: .weekly), .windowResetCountdown(window: .weekly),
-            .windowResetAbsolute(window: .session), .conditional(id: rule.id), .percent(window: .weekly),
+            .windowResetAbsolute(window: .session), .conditional(id: rule.id), .lanePercent(lane: .tertiary),
         ]])
         #expect(settings.menuBarLayoutResolution(for: .codex).layout == expected)
         let reloaded = MenuBarPercentWindowNativeProofTests.settings(defaults: defaults, config: config)
@@ -86,10 +88,10 @@ struct MenuBarPercentWindowPreferenceTests {
     }
 
     @Test
-    func `applying a preference rewrites the percent and pace tokens`() {
+    func `applying a preference rewrites the percent and following pace tokens`() {
         let layout = MenuBarLayout(lines: [
             [.icon, .percent(window: .weekly), .separatorDot, .pace(window: .weekly), .runsOut],
-            [.percent(window: .automatic), .costToday],
+            [.percent(window: .weekly), .costToday],
         ])
 
         let session = MenuBarPercentWindowPreference.session.applied(to: layout)
@@ -99,6 +101,69 @@ struct MenuBarPercentWindowPreferenceTests {
             [.percent(window: .session), .costToday],
         ])
         #expect(MenuBarPercentWindowPreference.current(in: session) == .session)
+    }
+
+    @Test
+    func `picker preserves independent pace and monthly percent on mixed layouts`() {
+        // Reviewer example: Session % + Weekly pace + independently chosen Monthly %.
+        // Selecting Weekly unifies the semantic percents but must not consume the customs.
+        let layout = MenuBarLayout(lines: [[
+            .icon,
+            .percent(window: .session),
+            .separatorDot,
+            .pace(window: .weekly),
+            .separatorDot,
+            .lanePercent(lane: .tertiary),
+        ]])
+
+        let weekly = MenuBarPercentWindowPreference.weekly.applied(to: layout)
+
+        #expect(weekly.lines == [[
+            .icon,
+            .percent(window: .weekly),
+            .separatorDot,
+            .pace(window: .weekly),
+            .separatorDot,
+            .lanePercent(lane: .tertiary),
+        ]])
+    }
+
+    @Test
+    func `monthly keeps an independently chosen pace`() {
+        let layout = MenuBarLayout(lines: [[
+            .icon, .percent(window: .session), .separatorDot, .pace(window: .weekly),
+        ]])
+
+        #expect(MenuBarPercentWindowPreference.monthly.applied(to: layout).lines == [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .pace(window: .weekly),
+        ]])
+    }
+
+    @Test
+    func `current ignores independent direct lanes`() {
+        #expect(MenuBarPercentWindowPreference.current(in: MenuBarLayout(lines: [[
+            .icon, .percent(window: .weekly), .separatorDot, .lanePercent(lane: .primary),
+        ]])) == .weekly)
+    }
+
+    @Test
+    func `released projection maps monthly pace so reload keeps the saved layout`() throws {
+        let layout = MenuBarLayout(lines: [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .lanePace(lane: .tertiary),
+        ]])
+        let blobs = try MenuBarLayoutPersistence.encoded(layout)
+        let current = try JSONDecoder().decode(MenuBarLayout.self, from: blobs.current)
+        let released = try JSONDecoder().decode(MenuBarLayout.self, from: blobs.released)
+        let legacy = try JSONDecoder().decode(MenuBarLayout.self, from: blobs.legacy)
+        // Both older projections carry the mapped ordinary pace, so they agree with each other
+        // and the reload keeps the V3 layout instead of falling back.
+        #expect(released.lines == [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .pace(window: .automatic),
+        ]])
+        #expect(MenuBarLayoutPersistence.preferredLayout(
+            current: current,
+            released: released,
+            legacy: legacy) == layout)
     }
 
     @Test
