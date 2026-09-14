@@ -466,6 +466,9 @@ enum MenuBarLayoutToken: Codable, Hashable, Sendable {
     /// Signed pace delta for a window, e.g. `+11%` when usage runs ahead of the sustainable rate.
     /// `runsOut` answers "when does this end"; this token answers "how far off the even rate am I".
     case pace(window: PercentWindow)
+    /// Pace for a provider lane (e.g. Monthly), mirroring `lanePercent`: the only pace addressee
+    /// for windows `PercentWindow` cannot name.
+    case lanePace(lane: MenuBarLayoutLane)
     case usageBar
     case resetCountdown
     case resetAbsolute
@@ -503,6 +506,7 @@ enum MenuBarLayoutToken: Codable, Hashable, Sendable {
 
     var selectedLane: MenuBarLayoutLane? {
         if case let .lanePercent(lane) = self { return lane }
+        if case let .lanePace(lane) = self { return lane }
         return nil
     }
 
@@ -512,7 +516,7 @@ enum MenuBarLayoutToken: Codable, Hashable, Sendable {
     /// failing the whole blob and losing the user's arrangement.
     var hasReleasedRepresentation: Bool {
         switch self {
-        case .windowResetCountdown, .windowResetAbsolute: false
+        case .windowResetCountdown, .windowResetAbsolute, .lanePace: false
         default: true
         }
     }
@@ -531,6 +535,8 @@ enum MenuBarLayoutToken: Codable, Hashable, Sendable {
         switch self {
         case let .lanePercent(lane):
             .percent(window: MenuBarLayout.legacyPercentWindow(for: lane, provider: provider))
+        case let .lanePace(lane):
+            .pace(window: MenuBarLayout.legacyPercentWindow(for: lane, provider: provider))
         default:
             self
         }

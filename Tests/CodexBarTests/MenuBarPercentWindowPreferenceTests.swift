@@ -39,7 +39,7 @@ struct MenuBarPercentWindowPreferenceTests {
         MenuBarPercentWindowPreference.persist(.weekly, appliedTo: layout, for: .codex, settings: settings)
         let expected = MenuBarLayout(lines: [[
             .icon, .percent(window: .weekly), .windowResetCountdown(window: .weekly),
-            .windowResetAbsolute(window: .session), .conditional(id: rule.id), .lanePercent(lane: .tertiary),
+            .windowResetAbsolute(window: .session), .conditional(id: rule.id), .percent(window: .weekly),
         ]])
         #expect(settings.menuBarLayoutResolution(for: .codex).layout == expected)
         let reloaded = MenuBarPercentWindowNativeProofTests.settings(defaults: defaults, config: config)
@@ -86,16 +86,16 @@ struct MenuBarPercentWindowPreferenceTests {
     }
 
     @Test
-    func `applying a preference rewrites only the percent tokens`() {
+    func `applying a preference rewrites the percent and pace tokens`() {
         let layout = MenuBarLayout(lines: [
-            [.icon, .percent(window: .weekly), .separatorDot, .runsOut],
+            [.icon, .percent(window: .weekly), .separatorDot, .pace(window: .weekly), .runsOut],
             [.percent(window: .automatic), .costToday],
         ])
 
         let session = MenuBarPercentWindowPreference.session.applied(to: layout)
 
         #expect(session.lines == [
-            [.icon, .percent(window: .session), .separatorDot, .runsOut],
+            [.icon, .percent(window: .session), .separatorDot, .pace(window: .session), .runsOut],
             [.percent(window: .session), .costToday],
         ])
         #expect(MenuBarPercentWindowPreference.current(in: session) == .session)
@@ -113,15 +113,34 @@ struct MenuBarPercentWindowPreferenceTests {
 
     @Test
     func `monthly preference round-trips through the tertiary lane`() {
-        let original = MenuBarLayout(lines: [[.icon, .percent(window: .automatic)]])
+        let original = MenuBarLayout(lines: [[
+            .icon, .percent(window: .automatic), .separatorDot, .pace(window: .automatic),
+        ]])
 
         let monthly = MenuBarPercentWindowPreference.monthly.applied(to: original)
 
-        #expect(monthly == MenuBarLayout(lines: [[.icon, .lanePercent(lane: .tertiary)]]))
+        #expect(monthly == MenuBarLayout(lines: [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .lanePace(lane: .tertiary),
+        ]]))
         #expect(MenuBarPercentWindowPreference.current(in: monthly) == .monthly)
         #expect(MenuBarPercentWindowPreference.hasPercentToken(in: monthly))
         #expect(MenuBarPercentWindowPreference.available(for: .opencodego).contains(.monthly))
         #expect(MenuBarPercentWindowPreference.monthly.label(for: .opencodego) == L("Monthly"))
+    }
+
+    @Test
+    func `leaving monthly rewrites the lane token back to a percent`() {
+        let monthly = MenuBarLayout(lines: [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .lanePace(lane: .tertiary),
+        ]])
+
+        let backToWeekly = MenuBarPercentWindowPreference.weekly.applied(to: monthly)
+
+        #expect(backToWeekly == MenuBarLayout(lines: [[
+            .icon, .percent(window: .weekly), .separatorDot, .pace(window: .weekly),
+        ]]))
+        #expect(MenuBarPercentWindowPreference.current(in: backToWeekly) == .weekly)
+        #expect(MenuBarPercentWindowPreference.monthly.applied(to: backToWeekly) == monthly)
     }
 
     @Test

@@ -9,7 +9,8 @@ import Foundation
 /// percent with no obvious way to switch to the session lane. This maps the common case — every
 /// percent in the layout reading the same window — onto one picker.
 ///
-/// Only top-level percent tokens are considered. A conditional token carries its own then/else
+/// Only top-level percent tokens are considered, counting the tertiary lane token the Monthly
+/// choice writes as its percent. A conditional token carries its own then/else
 /// tokens, which stay under the layout editor's control. The picker hides when no top-level percent
 /// exists; mixed layouts expose only their top-level percent choice.
 enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendable {
@@ -153,19 +154,32 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
         }
     }
 
-    /// Layout with every percent token pointed at this preference's window; all other tokens,
+    /// Layout with every percent and pace token pointed at this preference's window; all other tokens,
     /// including line breaks and separators, are left exactly as the user arranged them. Monthly
-    /// rewrites percent tokens to the tertiary lane token the renderer reads for that window.
+    /// rewrites percent tokens to the tertiary lane token the renderer reads for that window, and
+    /// any other choice rewrites those lane tokens back — otherwise a Monthly layout would have
+    /// no percent token left to rewrite and the picker could never leave Monthly.
     func applied(to layout: MenuBarLayout) -> MenuBarLayout {
         MenuBarLayout(lines: layout.lines.map { line in
             line.map { token in
-                if case .percent = token {
+                switch token {
+                case .percent:
                     if self == .monthly {
                         return .lanePercent(lane: .tertiary)
                     }
                     return .percent(window: self.percentWindow)
+                case .pace:
+                    if self == .monthly {
+                        return .lanePace(lane: .tertiary)
+                    }
+                    return .pace(window: self.percentWindow)
+                case let .lanePercent(lane) where lane == .tertiary && self != .monthly:
+                    return .percent(window: self.percentWindow)
+                case let .lanePace(lane) where lane == .tertiary && self != .monthly:
+                    return .pace(window: self.percentWindow)
+                default:
+                    return token
                 }
-                return token
             }
         })
     }

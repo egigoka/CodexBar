@@ -96,6 +96,34 @@ struct MenuBarLayoutRendererTests {
     }
 
     @Test
+    func `tertiary lane pace renders monthly pace`() {
+        let renderer = MenuBarLayoutRenderer()
+        let data = self.data(provider: .opencodego, tertiaryPace: "+5%", tertiaryPaceDelta: 5)
+        let output = renderer.render(
+            layout: MenuBarLayout(lines: [[.lanePace(lane: .tertiary)]]),
+            data: data,
+            icon: nil,
+            options: self.options())
+
+        #expect(output.attributedTitle.string == "+5%")
+        #expect(output.accessibilityLabel == "Monthly pace +5%")
+
+        let missing = renderer.render(
+            layout: MenuBarLayout(lines: [[.lanePace(lane: .tertiary)]]),
+            data: self.data(provider: .opencodego),
+            icon: nil,
+            options: self.options())
+        #expect(missing.attributedTitle.string == "–")
+
+        let otherLane = renderer.render(
+            layout: MenuBarLayout(lines: [[.lanePace(lane: .primary)]]),
+            data: data,
+            icon: nil,
+            options: self.options())
+        #expect(otherLane.attributedTitle.string == "–")
+    }
+
+    @Test
     func `automatic balance text replaces the automatic percent window`() {
         let renderer = MenuBarLayoutRenderer()
         // DeepSeek's funded balance window arrives with usedPercent 0; the balance text must win
@@ -1624,6 +1652,8 @@ struct MenuBarLayoutRendererTests {
         automaticText: String? = nil,
         automaticBalanceFallback: String? = nil,
         accountLabel: String? = "user@example.com",
+        tertiaryPace: String? = nil,
+        tertiaryPaceDelta: Double? = nil,
         metrics: MenuBarLayoutRenderMetrics? = nil)
         -> MenuBarLayoutRenderData
     {
@@ -1674,6 +1704,7 @@ struct MenuBarLayoutRendererTests {
             sessionPace: "-8%",
             weeklyPace: "+11%",
             automaticPace: "0%",
+            tertiaryPace: tertiaryPace,
             runsOut: "Runs out in 1d 16h",
             balance: "$12.34",
             costToday: "$1.25",
@@ -1683,6 +1714,7 @@ struct MenuBarLayoutRendererTests {
                 sessionPaceDelta: -8,
                 weeklyPaceDelta: 11,
                 automaticPaceDelta: 0,
+                tertiaryPaceDelta: tertiaryPaceDelta,
                 runsOutMinutes: 2400,
                 balanceRemainingUSD: 12.34,
                 balanceUsedUSD: 7.66,

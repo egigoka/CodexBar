@@ -33,6 +33,9 @@ struct MenuBarLayoutRenderMetrics: Hashable {
     let sessionPaceDelta: Double?
     let weeklyPaceDelta: Double?
     let automaticPaceDelta: Double?
+    /// Monthly (tertiary lane) pace delta. Defaulted so existing construction sites keep compiling;
+    /// only the status item and editor preview populate it yet.
+    let tertiaryPaceDelta: Double?
     /// Whole minutes until the projected run-out (`UsagePace.etaSeconds`).
     let runsOutMinutes: Int?
     /// USD amounts mirroring `balance` / `costToday` / `cost30d`. Provider amounts reported in another
@@ -41,6 +44,28 @@ struct MenuBarLayoutRenderMetrics: Hashable {
     let balanceUsedUSD: Double?
     let costTodayUSD: Double?
     let cost30dUSD: Double?
+
+    init(
+        sessionPaceDelta: Double?,
+        weeklyPaceDelta: Double?,
+        automaticPaceDelta: Double?,
+        tertiaryPaceDelta: Double? = nil,
+        runsOutMinutes: Int?,
+        balanceRemainingUSD: Double?,
+        balanceUsedUSD: Double?,
+        costTodayUSD: Double?,
+        cost30dUSD: Double?)
+    {
+        self.sessionPaceDelta = sessionPaceDelta
+        self.weeklyPaceDelta = weeklyPaceDelta
+        self.automaticPaceDelta = automaticPaceDelta
+        self.tertiaryPaceDelta = tertiaryPaceDelta
+        self.runsOutMinutes = runsOutMinutes
+        self.balanceRemainingUSD = balanceRemainingUSD
+        self.balanceUsedUSD = balanceUsedUSD
+        self.costTodayUSD = costTodayUSD
+        self.cost30dUSD = cost30dUSD
+    }
 
     static let unavailable = MenuBarLayoutRenderMetrics(
         sessionPaceDelta: nil,
@@ -80,14 +105,65 @@ struct MenuBarLayoutRenderData: Hashable {
     let sessionPace: String?
     let weeklyPace: String?
     let automaticPace: String?
+    /// Monthly (tertiary lane) pace text, resolved upstream like the other paces.
+    let tertiaryPace: String?
     let runsOut: String?
     let balance: String?
     let costToday: String?
     let cost30d: String?
     /// Numeric twins of the display strings above, for conditional predicates.
     let metrics: MenuBarLayoutRenderMetrics
-}
 
+    init(
+        provider: UsageProvider,
+        iconKey: String,
+        providerName: String?,
+        accountLabel: String?,
+        laneLabels: MenuBarLayoutLaneLabels,
+        primary: MenuBarLayoutRenderWindow?,
+        secondary: MenuBarLayoutRenderWindow?,
+        tertiary: MenuBarLayoutRenderWindow?,
+        session: MenuBarLayoutRenderWindow?,
+        weekly: MenuBarLayoutRenderWindow?,
+        scopedWeekly: MenuBarLayoutRenderWindow?,
+        scopedWeeklyTitle: String?,
+        automatic: MenuBarLayoutRenderWindow?,
+        automaticText: String?,
+        sessionPace: String?,
+        weeklyPace: String?,
+        automaticPace: String?,
+        tertiaryPace: String? = nil,
+        runsOut: String?,
+        balance: String?,
+        costToday: String?,
+        cost30d: String?,
+        metrics: MenuBarLayoutRenderMetrics)
+    {
+        self.provider = provider
+        self.iconKey = iconKey
+        self.providerName = providerName
+        self.accountLabel = accountLabel
+        self.laneLabels = laneLabels
+        self.primary = primary
+        self.secondary = secondary
+        self.tertiary = tertiary
+        self.session = session
+        self.weekly = weekly
+        self.scopedWeekly = scopedWeekly
+        self.scopedWeeklyTitle = scopedWeeklyTitle
+        self.automatic = automatic
+        self.automaticText = automaticText
+        self.sessionPace = sessionPace
+        self.weeklyPace = weeklyPace
+        self.automaticPace = automaticPace
+        self.tertiaryPace = tertiaryPace
+        self.runsOut = runsOut
+        self.balance = balance
+        self.costToday = costToday
+        self.cost30d = cost30d
+        self.metrics = metrics
+    }
+}
 struct MenuBarLayoutRenderOptions: Hashable {
     let size: MenuBarLayoutSize
     let colorPace: Bool
@@ -577,6 +653,27 @@ final class MenuBarLayoutRenderer {
             }
             return self.optionalTextToken(
                 Self.pace(window, data: data),
+                unavailableLabel: L("%@ unavailable", accessibilityPrefix),
+                accessibilityPrefix: accessibilityPrefix,
+                attributes: attributes)
+        case let .lanePace(lane):
+            // Only the tertiary lane carries pace data; other lanes stay placeable in the editor
+            // but render the missing-value placeholder until a reader feeds them.
+            guard lane == .tertiary else {
+                return self.optionalTextToken(
+                    nil,
+                    unavailableLabel: L("%@ unavailable", item.editorLabel(provider: data.provider)),
+                    attributes: style.attributes)
+            }
+            let accessibilityPrefix = item.editorLabel(provider: data.provider)
+            var attributes = style.attributes
+            if options.colorPace, let delta = data.metrics.tertiaryPaceDelta, delta.isFinite, delta != 0 {
+                let color: NSColor = delta < 0 ? .systemGreen : .systemRed
+                attributes[.foregroundColor] = options.isStale && !options.highContrast ? color
+                    .withAlphaComponent(0.5) : color
+            }
+            return self.optionalTextToken(
+                data.tertiaryPace,
                 unavailableLabel: L("%@ unavailable", accessibilityPrefix),
                 accessibilityPrefix: accessibilityPrefix,
                 attributes: attributes)
