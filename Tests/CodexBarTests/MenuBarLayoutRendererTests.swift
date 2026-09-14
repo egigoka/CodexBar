@@ -91,7 +91,7 @@ struct MenuBarLayoutRendererTests {
             icon: nil,
             options: self.options())
 
-        #expect(output.attributedTitle.string == "10%\u{2009}9%\u{2009}17%")
+        #expect(output.attributedTitle.string == "T 10%\u{2009}C 9%\u{2009}T 17%")
         #expect(output.accessibilityLabel == "Total 10%, Cursor 9%, Third Party 17%")
     }
 
@@ -504,7 +504,7 @@ struct MenuBarLayoutRendererTests {
 
         #expect(output.leadingIcon == nil)
         #expect(output.attributedTitle.attribute(.attachment, at: 0, effectiveRange: nil) is NSTextAttachment)
-        #expect(output.attributedTitle.string == "\u{FFFC}\n50%\u{2009}5h 25%\u{2009}W 60%\u{2009}10%")
+        #expect(output.attributedTitle.string == "\u{FFFC}\n50%\u{2009}5h 25%\u{2009}W 60%\u{2009}S 10%")
         #expect(output.accessibilityLabel.contains(L("menu_bar_layout_line", 2)))
     }
 

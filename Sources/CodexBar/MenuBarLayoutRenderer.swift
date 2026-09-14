@@ -838,10 +838,12 @@ final class MenuBarLayoutRenderer {
             automaticText: nil,
             showUsed: showUsed)
         let label = data.laneLabels.label(for: lane)
+        let prefix = label.first.map { String($0).uppercased() } ?? ""
+        let display = prefix.isEmpty ? resolvedValue.text : "\(prefix) \(resolvedValue.text)"
         let accessibility = resolvedValue.isAvailable
             ? L("%@ %@", label, resolvedValue.text)
             : L("%@ unavailable", label)
-        return self.textToken(resolvedValue.text, accessibilityText: accessibility, attributes: attributes)
+        return self.textToken(display, accessibilityText: accessibility, attributes: attributes)
     }
 
     private static func percentValue(
