@@ -140,6 +140,30 @@ struct MenuBarPercentWindowPreferenceTests {
     }
 
     @Test
+    func `monthly heals a stale automatic pace onto the lane`() {
+        // Older projections carried pace(.automatic) next to the monthly lane; re-picking
+        // Monthly must heal it even though it no longer matches the previous selection.
+        let layout = MenuBarLayout(lines: [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .pace(window: .automatic),
+        ]])
+
+        #expect(MenuBarPercentWindowPreference.monthly.applied(to: layout).lines == [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .lanePace(lane: .tertiary),
+        ]])
+    }
+
+    @Test
+    func `weekly then monthly heals a stale automatic pace`() {
+        let weekly = MenuBarLayout(lines: [[
+            .icon, .percent(window: .weekly), .separatorDot, .pace(window: .automatic),
+        ]])
+
+        #expect(MenuBarPercentWindowPreference.monthly.applied(to: weekly).lines == [[
+            .icon, .lanePercent(lane: .tertiary), .separatorDot, .lanePace(lane: .tertiary),
+        ]])
+    }
+
+    @Test
     func `current ignores independent direct lanes`() {
         #expect(MenuBarPercentWindowPreference.current(in: MenuBarLayout(lines: [[
             .icon, .percent(window: .weekly), .separatorDot, .lanePercent(lane: .primary),

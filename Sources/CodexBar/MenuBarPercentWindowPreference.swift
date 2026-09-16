@@ -158,7 +158,8 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
     /// custom tokens. Percent tokens always follow (the picker's documented contract, including the
     /// flattening of mixed percent windows); pace and lane tokens only follow when they match the
     /// previous selection, so an independently chosen Weekly pace or Monthly percent survives a
-    /// picker change. Monthly rewrites percent tokens to the tertiary lane token the renderer reads
+    /// picker change. An Automatic pace is the exception: it is default residue, never a deliberate
+    /// custom, so Monthly always heals it onto the lane. Monthly rewrites percent tokens to the tertiary lane token the renderer reads
     /// for that window, and leaving Monthly rewrites those lane tokens back — otherwise a Monthly
     /// layout would have no percent token left to rewrite and the picker could never leave Monthly.
     func applied(to layout: MenuBarLayout) -> MenuBarLayout {
@@ -173,6 +174,11 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
                     return .percent(window: self.percentWindow)
                 case let .pace(window):
                     if self == .monthly {
+                        // An Automatic pace is default residue, never a deliberate custom: it
+                        // renders the session pace, which is incoherent next to a Monthly percent,
+                        // so Monthly always heals it onto the lane. A specific-window pace only
+                        // follows when it matches the previous selection.
+                        if window == .automatic { return .lanePace(lane: .tertiary) }
                         guard previous == nil || window == previous?.percentWindow else { return token }
                         return .lanePace(lane: .tertiary)
                     }
