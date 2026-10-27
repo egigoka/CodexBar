@@ -86,6 +86,39 @@ struct MenuBarPercentWindowPreferenceTests {
     }
 
     @Test
+    func `mixed concrete session and weekly percents stay under the layout editor`() {
+        let stacked = MenuBarLayout(lines: [
+            [.percent(window: .session)],
+            [.percent(window: .weekly)],
+        ])
+        let singleLine = MenuBarLayout(lines: [[
+            .icon,
+            .percent(window: .session),
+            .separatorDot,
+            .percent(window: .weekly),
+        ]])
+        for layout in [stacked, singleLine] {
+            #expect(MenuBarPercentWindowPreference.current(in: layout) == nil)
+            // Collapsing either window would render the same quota twice in the menu bar.
+            #expect(MenuBarPercentWindowPreference.session.applied(to: layout) == layout)
+            #expect(MenuBarPercentWindowPreference.weekly.applied(to: layout) == layout)
+            #expect(MenuBarPercentWindowPreference.automatic.applied(to: layout) == layout)
+            let available = MenuBarPercentWindowPreference.available(for: .codex)
+            #expect(MenuBarPercentWindowPreference.isVisible(
+                iconStyle: .iconAndPercent,
+                layout: layout,
+                available: available) == false)
+        }
+        // A repeated single window is still one group and keeps rewriting.
+        let repeated = MenuBarLayout(lines: [
+            [.icon, .percent(window: .session)],
+            [.percent(window: .session)],
+        ])
+        #expect(MenuBarPercentWindowPreference.current(in: repeated) == .session)
+        #expect(MenuBarPercentWindowPreference.weekly.applied(to: repeated) != repeated)
+    }
+
+    @Test
     func `applying a preference rewrites only the percent tokens`() {
         let layout = MenuBarLayout(lines: [
             [.icon, .percent(window: .weekly), .separatorDot, .runsOut],

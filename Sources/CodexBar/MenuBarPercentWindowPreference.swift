@@ -72,6 +72,7 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
     {
         iconStyle == .iconAndPercent
             && self.hasPercentToken(in: layout)
+            && self.current(in: layout) != nil
             && available.count > 1
     }
 
@@ -113,8 +114,11 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
 
     /// Layout with every percent token pointed at this preference's window; all other tokens,
     /// including line breaks and separators, are left exactly as the user arranged them.
+    /// A layout already showing two different quotas (e.g. session plus weekly) is only
+    /// describable in the layout editor; rewriting it would render the same quota twice.
     func applied(to layout: MenuBarLayout) -> MenuBarLayout {
-        MenuBarLayout(lines: layout.lines.map { line in
+        if Self.hasMixedConcretePercents(in: layout) { return layout }
+        return MenuBarLayout(lines: layout.lines.map { line in
             line.map { token in
                 if case .percent = token {
                     return .percent(window: self.percentWindow)
@@ -129,6 +133,17 @@ enum MenuBarPercentWindowPreference: String, CaseIterable, Identifiable, Sendabl
             guard case let .percent(window) = token else { return nil }
             return window
         }
+    }
+
+    /// Concrete windows exclude `.automatic`, which follows the provider default instead of
+    /// naming a quota. Two or more distinct ones mean the layout already shows independent
+    /// quotas that no single preference may collapse into duplicates.
+    private static func hasMixedConcretePercents(in layout: MenuBarLayout) -> Bool {
+        var windows = Set<PercentWindow>()
+        for window in self.percentWindows(in: layout) where window != .automatic {
+            windows.insert(window)
+        }
+        return windows.count > 1
     }
 
     /// Same mapping the layout migration uses: primary/secondary become the provider's semantic
