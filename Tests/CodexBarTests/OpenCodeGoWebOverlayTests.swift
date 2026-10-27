@@ -267,7 +267,9 @@ struct OpenCodeGoWebOverlayTests {
                     throw OpenCodeGoUsageError.invalidCredentials
                 },
                 cliCredentialLoader: { _ in nil })
-            _ = try await strategy.fetch(self.makeContext(includeOptionalUsage: false))
+            _ = try await ProviderInteractionContext.$current.withValue(.userInitiated) {
+                try await strategy.fetch(self.makeContext(includeOptionalUsage: false))
+            }
             #expect(CookieHeaderCache.load(provider: .opencodego)?.cookieHeader == "auth=replacement")
         }
     }
@@ -647,11 +649,73 @@ struct OpenCodeGoWebOverlayTests {
                 webUsageOverlayFetcher: { _, _ in throw URLError(.timedOut) },
                 cliCredentialLoader: { _ in nil })
 
-            let result = try await strategy.fetch(self.makeContext(includeOptionalUsage: false))
+            // Manual refreshes keep the marked estimate so users still see local history.
+            let result = try await ProviderInteractionContext.$current.withValue(.userInitiated) {
+                try await strategy.fetch(self.makeContext(includeOptionalUsage: false))
+            }
 
             #expect(result.sourceLabel == "local")
             #expect(result.usage.tertiary?.usedPercent == 100)
             #expect(CookieHeaderCache.load(provider: .opencodego)?.cookieHeader == "auth=cached-session")
+        }
+    }
+
+    @Test
+    func `background refresh preserves prior snapshot when cached web overlay is transiently unavailable`() async {
+        await self.withCachedCookie {
+            let nilOverlay = OpenCodeGoLocalUsageFetchStrategy(
+                localSnapshotLoader: { _ in Self.localEstimate() },
+                webUsageOverlayFetcher: { _, _ in nil },
+                cliCredentialLoader: { _ in nil })
+            await #expect(throws: OpenCodeGoSettingsError.self) {
+                try await nilOverlay.fetch(self.makeContext(includeOptionalUsage: false))
+            }
+
+            let transportFailure = OpenCodeGoLocalUsageFetchStrategy(
+                localSnapshotLoader: { _ in Self.localEstimate() },
+                webUsageOverlayFetcher: { _, _ in throw URLError(.timedOut) },
+                cliCredentialLoader: { _ in nil })
+            await #expect(throws: OpenCodeGoSettingsError.self) {
+                try await transportFailure.fetch(self.makeContext(includeOptionalUsage: false))
+            }
+        }
+    }
+
+    @Test
+    func `background refresh keeps local estimate when no web session ever existed`() async throws {
+        try await self.withEmptyCookieCache {
+            let strategy = OpenCodeGoLocalUsageFetchStrategy(
+                cookieHeaderResolver: { _, _ in throw OpenCodeGoSettingsError.missingCookie },
+                localSnapshotLoader: { _ in Self.localEstimate() },
+                webUsageOverlayFetcher: { _, _ in
+                    Issue.record("Missing cookies must not reach the server")
+                    return nil
+                },
+                cliCredentialLoader: { _ in nil })
+
+            let result = try await strategy.fetch(self.makeContext(includeOptionalUsage: false))
+
+            #expect(result.sourceLabel == "local")
+            #expect(result.usage.tertiary?.usedPercent == 100)
+            #expect(result.usage.dataConfidence == .estimated)
+        }
+    }
+
+    @Test
+    func `manual refresh keeps local estimate when cached web overlay is unavailable`() async throws {
+        try await self.withCachedCookie {
+            let strategy = OpenCodeGoLocalUsageFetchStrategy(
+                localSnapshotLoader: { _ in Self.localEstimate() },
+                webUsageOverlayFetcher: { _, _ in nil },
+                cliCredentialLoader: { _ in nil })
+
+            let result = try await ProviderInteractionContext.$current.withValue(.userInitiated) {
+                try await strategy.fetch(self.makeContext(includeOptionalUsage: false))
+            }
+
+            #expect(result.sourceLabel == "local")
+            #expect(result.usage.tertiary?.usedPercent == 100)
+            #expect(result.usage.dataConfidence == .estimated)
         }
     }
 

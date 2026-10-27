@@ -250,8 +250,41 @@ struct OpenCodeGoLocalUsageFetchStrategy: ProviderFetchStrategy {
         } catch {
             if Task.isCancelled { throw CancellationError() }
         }
+        #if os(macOS)
+        // Background ticks must not publish a local-only estimate over a prior authoritative
+        // snapshot when a web overlay may still be reachable (cached session present or Keychain
+        // temporarily unreadable). Failing preserves the prior snapshot; the next manual refresh
+        // retries the overlay with interaction allowed.
+        if Self.shouldPreservePriorSnapshotInBackground(context: context, fallback: fallback) {
+            throw OpenCodeGoSettingsError.missingCookie
+        }
+        #endif
         return fallback
     }
+
+    #if os(macOS)
+    /// Background refreshes cannot prompt for Keychain or browser access, so a non-authoritative
+    /// local result is inconclusive whenever a cached session exists or the Keychain read itself
+    /// was gated. A definitively empty cache (readable Keychain, no session ever stored) keeps the
+    /// local estimate so first-run and logged-out users still see local history.
+    private static func shouldPreservePriorSnapshotInBackground(
+        context: ProviderFetchContext,
+        fallback: SnapshotResult) -> Bool
+    {
+        guard ProviderInteractionContext.current == .background,
+              context.sourceMode == .auto,
+              context.settings?.opencodego?.cookieSource ?? .auto == .auto,
+              fallback.sourceLabel == "local",
+              !fallback.quotaIsAuthoritative
+        else { return false }
+        switch CookieHeaderCache.observeForConditionalMutation(provider: .opencodego) {
+        case .authoritative(nil, _, _):
+            return false
+        case .authoritative, .keychainTemporarilyUnavailable:
+            return true
+        }
+    }
+    #endif
 
     private func snapshotWithoutCLILogin(context: ProviderFetchContext) async throws -> SnapshotResult {
         var snapshot = try self.localSnapshotLoader(context)
