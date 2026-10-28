@@ -504,6 +504,7 @@ final class MenuBarLayoutRenderer {
                 result.append(NSAttributedString(string: "\n", attributes: attributes))
             }
             var accessibilityParts: [String] = []
+            var lineWindowLabel: String?
             for (tokenIndex, token) in renderedLine.enumerated() {
                 // The leading icon is surfaced as `button.image` so AppKit applies the system's
                 // active/inactive display tinting; it is not repeated inside the attributed title,
@@ -526,8 +527,19 @@ final class MenuBarLayoutRenderer {
                         attributes: attributes),
                     options: options,
                     providerTintColor: providerTintColor)
-                renderedItem = Self.labelAutomaticItem(
-                    renderedItem, token: token, data: data, options: options, attributes: attributes)
+                let automaticLabel = Self.automaticItemLabel(token, data: data)
+                if let automaticLabel {
+                    // Name the window once per run of tokens: `5h 0% –`, not `5h 0% 5h –`.
+                    renderedItem = Self.labelAutomaticItem(
+                        renderedItem,
+                        label: automaticLabel,
+                        showsPrefix: options.showWindowLabels && automaticLabel.short != lineWindowLabel,
+                        attributes: attributes)
+                }
+                // Separators keep the line's current window; any other token replaces it.
+                if token != .space, token != .separatorDot {
+                    lineWindowLabel = automaticLabel?.short ?? Self.renderedWindowPrefix(renderedItem.value)
+                }
                 result.append(renderedItem.value)
                 if let accessibilityText = renderedItem.accessibilityText {
                     accessibilityParts.append(accessibilityText)
@@ -672,26 +684,40 @@ final class MenuBarLayoutRenderer {
         }
     }
 
-    private static func labelAutomaticItem(
-        _ rendered: (value: NSAttributedString, accessibilityText: String?),
-        token: MenuBarLayoutToken,
-        data: MenuBarLayoutRenderData,
-        options: MenuBarLayoutRenderOptions,
-        attributes: [NSAttributedString.Key: Any])
-        -> (value: NSAttributedString, accessibilityText: String?)
+    private static func automaticItemLabel(
+        _ token: MenuBarLayoutToken,
+        data: MenuBarLayoutRenderData) -> (short: String, full: String)?
     {
         switch token {
         case .percent(window: .automatic), .pace(window: .automatic), .resetCountdown, .resetAbsolute,
-             .windowResetCountdown(window: .automatic), .windowResetAbsolute(window: .automatic): break
-        default: return rendered
+             .windowResetCountdown(window: .automatic), .windowResetAbsolute(window: .automatic):
+            self.automaticWindowLabel(data: data)
+        default: nil
         }
-        guard let label = self.automaticWindowLabel(data: data) else { return rendered }
-        return (
-            self.prefixedValue(
-                options.showWindowLabels ? label.short : "",
-                value: rendered.value,
-                attributes: attributes),
+    }
+
+    /// VoiceOver keeps the full window name even when the visible prefix is omitted.
+    private static func labelAutomaticItem(
+        _ rendered: (value: NSAttributedString, accessibilityText: String?),
+        label: (short: String, full: String),
+        showsPrefix: Bool,
+        attributes: [NSAttributedString.Key: Any])
+        -> (value: NSAttributedString, accessibilityText: String?)
+    {
+        (
+            self.prefixedValue(showsPrefix ? label.short : "", value: rendered.value, attributes: attributes),
             rendered.accessibilityText.map { L("%@: %@", label.full, $0) })
+    }
+
+    /// The window label a rendered token starts with, such as `5h` in `5h 25%`.
+    private static func renderedWindowPrefix(_ value: NSAttributedString) -> String? {
+        guard value.length > 0 else { return nil }
+        var range = NSRange(location: 0, length: 0)
+        let whole = NSRange(location: 0, length: value.length)
+        guard value.attribute(self.windowPrefixKey, at: 0, longestEffectiveRange: &range, in: whole) != nil else {
+            return nil
+        }
+        return value.attributedSubstring(from: range).string.trimmingCharacters(in: .whitespaces)
     }
 
     private static func automaticWindowLabel(data: MenuBarLayoutRenderData) -> (short: String, full: String)? {

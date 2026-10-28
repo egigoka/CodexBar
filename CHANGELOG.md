@@ -2,6 +2,10 @@
 
 ## 0.82.1 — Unreleased
 
+### Fixed
+
+- Menu bar: name the Auto window once per row, so Auto % with Auto pace shows `5h 0% –` instead of `5h 0% 5h –`; separate rows, other windows, and VoiceOver keep their labels (#4820). Thanks @egigoka!
+
 ## 0.82.0 — 2026-10-26
 
 ### Highlights
