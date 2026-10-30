@@ -499,6 +499,7 @@ final class MenuBarLayoutRenderer {
             attributes[.baselineOffset] = Self.stackedBaselineOffset + 2 + CGFloat(options.verticalAdjustment)
         }
 
+        let automaticLabel = Self.automaticWindowLabel(data: data)
         for (lineIndex, renderedLine) in renderedLines.enumerated() {
             if lineIndex > 0 {
                 result.append(NSAttributedString(string: "\n", attributes: attributes))
@@ -527,18 +528,24 @@ final class MenuBarLayoutRenderer {
                         attributes: attributes),
                     options: options,
                     providerTintColor: providerTintColor)
-                let automaticLabel = Self.automaticItemLabel(token, data: data)
-                if let automaticLabel {
-                    // Name the window once per run of tokens: `5h 0% –`, not `5h 0% 5h –`.
-                    renderedItem = Self.labelAutomaticItem(
-                        renderedItem,
-                        label: automaticLabel,
-                        showsPrefix: options.showWindowLabels && automaticLabel.short != lineWindowLabel,
-                        attributes: attributes)
-                }
-                // Separators keep the line's current window; any other token replaces it.
-                if token != .space, token != .separatorDot {
-                    lineWindowLabel = automaticLabel?.short ?? Self.renderedWindowPrefix(renderedItem.value)
+                switch token {
+                case .percent(window: .automatic), .pace(window: .automatic), .resetCountdown, .resetAbsolute,
+                     .windowResetCountdown(window: .automatic), .windowResetAbsolute(window: .automatic):
+                    if let label = automaticLabel {
+                        renderedItem.value = Self.prefixedValue(
+                            options.showWindowLabels && label.short != lineWindowLabel ? label.short : "",
+                            value: renderedItem.value,
+                            attributes: attributes)
+                        // VoiceOver names every window, even when the visible prefix is shared.
+                        renderedItem.accessibilityText = renderedItem.accessibilityText
+                            .map { L("%@: %@", label.full, $0) }
+                        lineWindowLabel = label.short
+                    }
+                case .space, .separatorDot: break
+                default:
+                    lineWindowLabel = renderedItem.value.length > 0
+                        ? renderedItem.value
+                        .attribute(Self.windowPrefixKey, at: 0, effectiveRange: nil) as? String : nil
                 }
                 result.append(renderedItem.value)
                 if let accessibilityText = renderedItem.accessibilityText {
@@ -684,42 +691,6 @@ final class MenuBarLayoutRenderer {
         }
     }
 
-    private static func automaticItemLabel(
-        _ token: MenuBarLayoutToken,
-        data: MenuBarLayoutRenderData) -> (short: String, full: String)?
-    {
-        switch token {
-        case .percent(window: .automatic), .pace(window: .automatic), .resetCountdown, .resetAbsolute,
-             .windowResetCountdown(window: .automatic), .windowResetAbsolute(window: .automatic):
-            self.automaticWindowLabel(data: data)
-        default: nil
-        }
-    }
-
-    /// VoiceOver keeps the full window name even when the visible prefix is omitted.
-    private static func labelAutomaticItem(
-        _ rendered: (value: NSAttributedString, accessibilityText: String?),
-        label: (short: String, full: String),
-        showsPrefix: Bool,
-        attributes: [NSAttributedString.Key: Any])
-        -> (value: NSAttributedString, accessibilityText: String?)
-    {
-        (
-            self.prefixedValue(showsPrefix ? label.short : "", value: rendered.value, attributes: attributes),
-            rendered.accessibilityText.map { L("%@: %@", label.full, $0) })
-    }
-
-    /// The window label a rendered token starts with, such as `5h` in `5h 25%`.
-    private static func renderedWindowPrefix(_ value: NSAttributedString) -> String? {
-        guard value.length > 0 else { return nil }
-        var range = NSRange(location: 0, length: 0)
-        let whole = NSRange(location: 0, length: value.length)
-        guard value.attribute(self.windowPrefixKey, at: 0, longestEffectiveRange: &range, in: whole) != nil else {
-            return nil
-        }
-        return value.attributedSubstring(from: range).string.trimmingCharacters(in: .whitespaces)
-    }
-
     private static func automaticWindowLabel(data: MenuBarLayoutRenderData) -> (short: String, full: String)? {
         guard let automatic = data.automatic, data.automaticText == nil else { return nil }
         let semantic: [PercentWindow] = [.session, .weekly, .scopedWeekly]
@@ -742,8 +713,8 @@ final class MenuBarLayoutRenderer {
             let title = data.laneLabels.label(for: lane)
             return (self.laneShortLabel(lane, data: data) ?? String(title.prefix(1)).uppercased(), title)
         }
-        guard laneMatches.isEmpty else { return nil }
-        guard extraMatches.count == 1, let extra = extraMatches.first, let title = data.extraTitle(extra.id)
+        guard laneMatches.isEmpty, extraMatches.count == 1, let extra = extraMatches.first,
+              let title = data.extraTitle(extra.id)
         else { return nil }
         let short = ProviderDescriptorRegistry.descriptor(for: data.provider).menuBarMetrics
             .namedExtraShortLabels[extra.id] ?? title
@@ -804,19 +775,31 @@ final class MenuBarLayoutRenderer {
             return self.renderPercent(window, data: data, style: style, options: options)
         case let .pace(window):
             let accessibilityPrefix = item.editorLabel(provider: data.provider)
+            let pace = Self.pace(window, data: data)
+            let neutralColor = Self.neutralForegroundColor(options)
             var attributes = style.attributes
-            attributes[.foregroundColor] = Self.neutralForegroundColor(options)
-            if options.colorPace, let delta = Self.paceDelta(window, data: data), delta.isFinite, delta != 0 {
-                // Use the same rounded numeric delta as the displayed text, never its localized sign.
-                let color: NSColor = delta < 0 ? .systemGreen : .systemRed
-                attributes[.foregroundColor] = options.isStale && !options.highContrast ? color
-                    .withAlphaComponent(0.5) : color
-            }
-            return self.optionalTextToken(
-                Self.pace(window, data: data),
+            attributes[.foregroundColor] = neutralColor
+            let rendered = self.optionalTextToken(
+                pace,
                 unavailableLabel: L("%@ unavailable", accessibilityPrefix),
                 accessibilityPrefix: accessibilityPrefix,
                 attributes: attributes)
+            guard options.colorPace, let pace, !pace.isEmpty else { return rendered }
+
+            var indicatorColor = neutralColor
+            var isMonochrome = true
+            if let delta = Self.paceDelta(window, data: data), delta.isFinite, delta != 0 {
+                // Use the same rounded numeric delta as the displayed text, never its localized sign.
+                let color: NSColor = delta < 0 ? .systemGreen : .systemRed
+                indicatorColor = options.isStale && !options.highContrast ? color
+                    .withAlphaComponent(0.5) : color
+                isMonochrome = false
+            }
+            let result = NSMutableAttributedString(attributedString: Self.paceIndicator(
+                color: indicatorColor, style: style, isMonochrome: isMonochrome))
+            result.append(NSAttributedString(string: "\u{2009}", attributes: attributes))
+            result.append(rendered.value)
+            return (result, rendered.accessibilityText)
         case .resetCountdown, .resetAbsolute, .windowResetCountdown, .windowResetAbsolute:
             let window = item.resetWindow ?? .automatic
             let qualified = item != .resetCountdown && item != .resetAbsolute
@@ -941,7 +924,7 @@ final class MenuBarLayoutRenderer {
     {
         guard !prefix.isEmpty else { return value }
         let result = NSMutableAttributedString(string: "\(prefix) ", attributes: attributes)
-        result.addAttribute(self.windowPrefixKey, value: true, range: NSRange(location: 0, length: result.length))
+        result.addAttribute(self.windowPrefixKey, value: prefix, range: NSRange(location: 0, length: result.length))
         result.append(value)
         return result
     }
@@ -1457,6 +1440,27 @@ extension MenuBarLayoutRenderer {
             showUsed: options.showUsed).text
         let accessibility = L("%@ %@", accessibilityPrefix, percentText)
         return (result, accessibility)
+    }
+
+    private static func paceIndicator(color: NSColor, style: TokenStyle, isMonochrome: Bool) -> NSAttributedString {
+        let height = style.font.capHeight
+        let size = NSSize(width: height / 2, height: height)
+        let image = NSImage(size: size, flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(rect: rect).fill()
+            return true
+        }
+        image.isTemplate = isMonochrome
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(
+            x: 0,
+            y: Self.attachmentYOrigin(height: size.height, style: style),
+            width: size.width,
+            height: size.height)
+        let value = NSMutableAttributedString(attributedString: Self.attachmentText(attachment, style: style))
+        value.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: value.length))
+        return value
     }
 
     private static func progressBarSize(size: MenuBarLayoutSize, font: NSFont) -> NSSize {
